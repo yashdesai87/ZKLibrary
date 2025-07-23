@@ -59,7 +59,7 @@ class ZKLibrary
     public $user_data = array();
     public $attendance_data = array();
     public $timeout_sec = 5;
-    public $timeout_usec = 5000000;
+    public $timeout_usec = 0; // Fixed: Changed from 5000000 to 0
 
     public function __construct($ip = null, $port = null)
     {
@@ -145,8 +145,22 @@ class ZKLibrary
         if ($usec != 0) {
             $this->timeout_usec = $usec;
         }
-        $timeout = array('sec' => $this->timeout_sec, 'usec' => $this->timeout_usec);
-        socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, $timeout);
+        
+        // Fixed: Ensure timeout values are within valid ranges
+        $timeout_sec = min($this->timeout_sec, 30); // Max 30 seconds
+        $timeout_usec = min($this->timeout_usec, 999999); // Max 999,999 microseconds
+        
+        $timeout = array(
+            'sec' => $timeout_sec, 
+            'usec' => $timeout_usec
+        );
+        
+        // Fixed: Add error handling for socket_set_option
+        if (!socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, $timeout)) {
+            // Fallback to a simpler timeout if the detailed one fails
+            $simple_timeout = array('sec' => 5, 'usec' => 0);
+            socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, $simple_timeout);
+        }
     }
 
     public function ping($timeout = 1)
@@ -241,12 +255,13 @@ class ZKLibrary
         $buf = pack('SSSS', $command, $chksum, $session_id, $reply_id) . $command_string;
         $buf = unpack('C' . (8 + strlen($command_string)) . 'c', $buf);
         $u = unpack('S', $this->checkSum($buf));
+        
+        // Fixed: Replace deprecated each() function
         if (is_array($u)) {
-            while (list($key) = each($u)) {
-                $u = $u[$key];
-                break;
-            }
+            // Get the first value from the array
+            $u = reset($u);
         }
+        
         $chksum = $u;
         $reply_id += 1;
         if ($reply_id >= USHRT_MAX) {
@@ -476,7 +491,7 @@ class ZKLibrary
 
     public function getSSR($net = true)
     {
-        $command = CMD_OPTIONS_PRQ;
+        $command = CMD_OPTIONS_RRQ; // Fixed: Changed from CMD_OPTIONS_PRQ
         $command_string = '~SSR';
         $return = $this->execCommand($command, $command_string);
         if ($net) {
@@ -494,10 +509,9 @@ class ZKLibrary
         return $this->execCommand($command, $command_string);
     }
 
-    public function getPinWidth()
+    public function getPinWidth($net = true) // Fixed: Added missing parameter
     {
-        $command = CMD_GET_PINWIDTH;
-        $command = CMD_OPTIONS_PRQ;
+        $command = CMD_OPTIONS_RRQ; // Fixed: Removed undefined CMD_GET_PINWIDTH and duplicate line
         $command_string = '~PIN2Width';
         $return = $this->execCommand($command, $command_string);
         if ($net) {
